@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Fingerprint Lookup</title>
+<style>
+  :root{
+    --bg:#0f1115;--card:#171a21;--border:#262a33;
+    --text:#e6e8ee;--muted:#8b93a7;
+    --accent:#4f8cff;--accent-hover:#3d7bee;
+    --success:#22c55e;--danger:#ef4444;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;min-height:100vh;
+    background:radial-gradient(1200px 800px at 50% -10%,#1a1f2b 0%,var(--bg) 60%);
+    color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    display:flex;align-items:center;justify-content:center;padding:20px;
+  }
+  .container{
+    width:100%;max-width:480px;background:var(--card);
+    border:1px solid var(--border);border-radius:16px;
+    padding:28px 24px;box-shadow:0 20px 60px rgba(0,0,0,.45);
+  }
+  h1{font-size:20px;margin:0 0 4px;letter-spacing:-.01em}
+  .subtitle{font-size:13px;color:var(--muted);margin:0 0 22px}
+  label{display:block;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:8px}
+  .input-row{display:flex;gap:8px}
+  input{
+    flex:1;background:#0d0f14;border:1px solid var(--border);border-radius:10px;
+    padding:13px 14px;color:var(--text);font-size:15px;outline:none;
+    transition:border-color .15s;
+  }
+  input:focus{border-color:var(--accent)}
+  input::placeholder{color:#5b6376}
+  button{
+    background:var(--accent);color:#fff;border:none;border-radius:10px;
+    padding:13px 18px;font-size:15px;font-weight:600;cursor:pointer;
+    transition:background .15s,opacity .15s;white-space:nowrap;
+  }
+  button:hover{background:var(--accent-hover)}
+  button:disabled{opacity:.55;cursor:not-allowed}
+  .result{margin-top:22px;border-top:1px solid var(--border);padding-top:20px;display:none}
+  .result.show{display:block}
+  .result-label{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:10px}
+  .fp-box{display:flex;align-items:center;gap:10px;background:#0d0f14;border:1px solid var(--border);border-radius:10px;padding:14px 16px}
+  .fp-value{flex:1;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:16px;letter-spacing:.03em;word-break:break-all;color:var(--success)}
+  .copy-btn{background:transparent;border:1px solid var(--border);color:var(--text);padding:8px 12px;font-size:13px;border-radius:8px;cursor:pointer}
+  .copy-btn:hover{background:#1e2230}
+  .copy-btn.copied{color:var(--success);border-color:var(--success)}
+  .status{margin-top:14px;font-size:13px;min-height:18px}
+  .status.error{color:var(--danger)}
+  .status.info{color:var(--muted)}
+  .spinner{display:inline-block;width:14px;height:14px;border:2px solid #3a4152;border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;vertical-align:-2px;margin-right:6px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+  <div class="container">
+    <h1>Fingerprint Lookup</h1>
+    <p class="subtitle">Enter a phone number to retrieve its fingerprint.</p>
+
+    <label for="phone">Phone number</label>
+    <div class="input-row">
+      <input id="phone" type="tel" placeholder="0712345678" autocomplete="off" />
+      <button id="searchBtn">Search for</button>
+    </div>
+
+    <div class="status" id="status"></div>
+
+    <div class="result" id="result">
+      <div class="result-label">Fingerprint</div>
+      <div class="fp-box">
+        <span class="fp-value" id="fpValue">—</span>
+        <button class="copy-btn" id="copyBtn">Copy</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+(function () {
+  const API_BASE = 'https://travis-j1w9.onrender.com';
+
+  const phoneInput = document.getElementById('phone');
+  const searchBtn  = document.getElementById('searchBtn');
+  const statusEl   = document.getElementById('status');
+  const resultEl   = document.getElementById('result');
+  const fpValueEl  = document.getElementById('fpValue');
+  const copyBtn    = document.getElementById('copyBtn');
+
+  function normalizePhone(raw) {
+    if (!raw) return '';
+    let p = raw.toString().replace(/[\s\-\(\)]/g, '');
+    if (p.startsWith('+')) p = p.slice(1);
+    if (p.startsWith('0')) p = '254' + p.slice(1);
+    if (p.startsWith('7') || p.startsWith('1')) p = '254' + p;
+    return p;
+  }
+  function isValidKenyan(p){ return /^254(7|1)\d{8}$/.test(p); }
+
+  function setStatus(msg, type) {
+    statusEl.className = 'status' + (type ? ' ' + type : '');
+    statusEl.innerHTML = msg;
+  }
+
+  async function lookup() {
+    const raw = phoneInput.value.trim();
+    if (!raw) {
+      setStatus('Please enter a phone number.', 'error');
+      resultEl.classList.remove('show');
+      return;
+    }
+    const normalized = normalizePhone(raw);
+    if (!isValidKenyan(normalized)) {
+      setStatus('Invalid Kenyan phone number. Try 0712345678 or +254712345678.', 'error');
+      resultEl.classList.remove('show');
+      return;
+    }
+
+    searchBtn.disabled = true;
+    setStatus('<span class="spinner"></span>Searching…', 'info');
+    resultEl.classList.remove('show');
+
+    try {
+      const res = await fetch(`${API_BASE}/lookup-fingerprint`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: normalized })
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        setStatus(data.error || 'Lookup failed.', 'error');
+        return;
+      }
+      if (!data.fingerprint) {
+        setStatus('No fingerprint found for that number.', 'error');
+        return;
+      }
+
+      fpValueEl.textContent = data.fingerprint;
+      resultEl.classList.add('show');
+      setStatus('Fingerprint retrieved.', 'info');
+    } catch (err) {
+      setStatus('Network error. Please try again.', 'error');
+    } finally {
+      searchBtn.disabled = false;
+    }
+  }
+
+  searchBtn.addEventListener('click', lookup);
+  phoneInput.addEventListener('keydown', e => { if (e.key === 'Enter') lookup(); });
+
+  copyBtn.addEventListener('click', async () => {
+    const text = fpValueEl.textContent;
+    if (!text || text === '—') return;
+    try { await navigator.clipboard.writeText(text); }
+    catch {
+      const ta = document.createElement('textarea');
+      ta.value = text; document.body.appendChild(ta);
+      ta.select(); document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+    copyBtn.textContent = 'Copied!';
+    copyBtn.classList.add('copied');
+    setTimeout(() => {
+      copyBtn.textContent = 'Copy';
+      copyBtn.classList.remove('copied');
+    }, 1500);
+  });
+})();
+</script>
+</body>
+</html>
